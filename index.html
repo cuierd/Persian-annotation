@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Distractor Selector Made Easy</title>
+  <style>
+    :root {
+      font-family: system-ui, sans-serif;
+      --border: #ccc;
+      --bg: #f7f7f7;
+      --accent: #1565c0;
+      --chosen: #e3f2fd;
+    }
+    body { margin: 0; padding: 1rem; max-width: 56rem; margin-inline: auto; background: #fff; }
+    h1 { font-size: 1.35rem; }
+    .panel { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: var(--bg); }
+    textarea { width: 100%; min-height: 8rem; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+    button { cursor: pointer; padding: 0.4rem 0.75rem; border-radius: 6px; border: 1px solid var(--border); background: #fff; }
+    button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .muted { color: #666; font-size: 0.9rem; }
+    .warn { color: #b71c1c; font-size: 0.9rem; }
+    .items { margin-top: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+    .item {
+      border: 1px solid var(--border); border-radius: 8px; padding: 1rem; background: #fff;
+    }
+    .item.pending { box-shadow: inset 0 0 0 2px #ff9800; }
+    .prefix { font-size: 0.95rem; color: #333; margin-bottom: 0.35rem; word-break: break-word; }
+    .target { font-weight: 700; margin-bottom: 0.75rem; font-size: 1.05rem; }
+    .choices { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .choices button { min-width: 4rem; text-align: center; }
+    .choices button.chosen { background: var(--chosen); border-color: var(--accent); outline: 2px solid var(--accent); }
+    .choices button.none-opt { border-style: dashed; }
+    .meta { font-size: 0.75rem; color: #888; margin-top: 0.5rem; }
+    .other-row {
+      margin-top: 0.75rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .other-row label { font-size: 0.85rem; font-weight: 600; }
+    .other-row input[type="text"] {
+      flex: 1;
+      min-width: 12rem;
+      padding: 0.4rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .other-row input.other-chosen { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(21,101,192,0.2); }
+    .other-row .use-custom-btn {
+      font-weight: 600;
+      border: 2px solid var(--accent);
+      background: #fff8e1;
+      color: #0d47a1;
+    }
+    .other-row .use-custom-btn:hover {
+      background: var(--chosen);
+    }
+    .other-row .use-custom-btn.chosen {
+      background: var(--chosen);
+      outline: 2px solid var(--accent);
+    }
+    .footer-download { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+    .bottom-bar { justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
+    .export-opts { display: flex; flex-wrap: wrap; gap: 0.75rem 1rem; align-items: center; font-size: 0.82rem; color: #444; max-width: 26rem; }
+    .export-opts label { display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; user-select: none; }
+    .export-hint { flex-basis: 100%; margin: 0; font-size: 0.78rem; line-height: 1.35; }
+  </style>
+</head>
+<body>
+  <h1>Distractor Selector Made Easy</h1>
+  <p class="muted">Pick the best distractor per target word. You can choose one suggested distractor, choose None, or type another suggestion. Submit when all items are answered.</p>
+
+  <div class="panel" id="loadPanel" style="display:none">
+    <label><strong>Upload JSON</strong></label>
+    <div class="row">
+      <input type="file" id="file" accept=".json,application/json" />
+    </div>
+    <label style="margin-top:1rem;display:block"><strong>Or paste JSON</strong></label>
+    <textarea id="jsonInput" placeholder='[ { "sentence_index": 0, "words": [ ... ] }, ... ]'></textarea>
+    <div class="row">
+      <button type="button" class="primary" id="parseBtn">Parse &amp; load</button>
+      <span id="status" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="panel" id="workPanel" style="display:none">
+    <p id="prolificLine" class="muted" style="margin-top:0"></p>
+    <div class="row bottom-bar">
+      <span id="progress" class="muted"></span>
+      <div class="export-opts" aria-label="TSV export options">
+        <label><input type="checkbox" class="export-inc-prefix" /> Include <code>sentence_prefix</code></label>
+        <label><input type="checkbox" class="export-inc-slot" checked /> Include <code>selected_slot</code></label>
+        <p class="export-hint muted">Recommended: keep <code>selected_slot</code> checked.</p>
+      </div>
+      <div class="row" style="margin:0">
+        <button type="button" class="download-tsv-btn">Download backup TSV</button>
+        <button type="button" class="primary submit-btn">Submit responses</button>
+      </div>
+    </div>
+    <div id="warnBox" class="warn" style="display:none;margin-top:0.5rem"></div>
+    <div class="items" id="items"></div>
+    <div class="footer-download">
+      <div class="row bottom-bar">
+        <span id="progressBottom" class="muted"></span>
+        <div class="export-opts" aria-label="TSV export options">
+          <label><input type="checkbox" class="export-inc-prefix" /> Include <code>sentence_prefix</code></label>
+          <label><input type="checkbox" class="export-inc-slot" checked /> Include <code>selected_slot</code></label>
+          <p class="export-hint muted">Recommended: keep <code>selected_slot</code> checked (records which distractor column you chose).</p>
+        </div>
+        <div class="row" style="margin:0">
+          <button type="button" class="download-tsv-btn">Download backup TSV</button>
+          <button type="button" class="primary submit-btn">Submit responses</button>
+        </div>
+      </div>
+      <div id="warnBoxBottom" class="warn" style="display:none;margin-top:0.5rem"></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    /***********************
+     * PROLIFIC CONFIG
+     * 1) Put your deployed Google Apps Script Web App URL below.
+     * 2) Put your Prolific completion URL below after creating the study.
+     ***********************/
+    const SUBMIT_ENDPOINT = "https://script.google.com/macros/s/AKfycbyI3ZjCvJKOVYvvb8LYKADC697_zaCxdFaOpsbGS-5YwqUFMwv4q3JzYdWihN2IkfX0tQ/exec";
+    const PROLIFIC_COMPLETION_URL = "https://app.prolific.com/submissions/complete?cc=CF6TBXNS";
+    const AUTO_JSON_FILE = "merged_lexicon_PopSci_Caveman_fa.json";
+
+    function getParam(name) {
+      return new URLSearchParams(window.location.search).get(name) || "";
+    }
+
+    const prolificMeta = {
+      prolific_pid: getParam("PROLIFIC_PID") || getParam("participant") || "",
+      study_id: getParam("STUDY_ID") || getParam("study_id") || "",
+      session_id: getParam("SESSION_ID") || getParam("session_id") || "",
+    };
+
+    function makeSubmissionId() {
+      if (crypto && crypto.randomUUID) return crypto.randomUUID();
+      return "sub_" + Date.now() + "_" + Math.random().toString(36).slice(2);
+    }
+
+    const submissionId = makeSubmissionId();
+
+    function escapeTsvCell(s) {
+      if (s == null || s === "") return "";
+      const t = String(s);
+      if (/[\t\n\r"]/.test(t)) return '"' + t.replace(/"/g, '""') + '"';
+      return t;
+    }
+
+    function distractorEntries(word) {
+      const keys = Object.keys(word).filter((k) => /^distractor\d+$/i.test(k));
+      keys.sort((a, b) => {
+        const na = parseInt(a.replace(/\D/g, ""), 10) || 0;
+        const nb = parseInt(b.replace(/\D/g, ""), 10) || 0;
+        return na - nb;
+      });
+      return keys.map((k) => ({ slot: k, text: word[k] }));
+    }
+
+    /**
+     * Flatten LLM-MAZE JSON: top-level array of { words: [...] } in order.
+     */
+    function flattenFromMazeJson(data) {
+      if (!Array.isArray(data)) throw new Error("JSON root must be an array of sentences.");
+      const rows = [];
+      let order = 0;
+      for (let si = 0; si < data.length; si++) {
+        const sent = data[si];
+        const words = sent && sent.words;
+        if (!Array.isArray(words)) continue;
+        for (let wi = 0; wi < words.length; wi++) {
+          const w = words[wi];
+          const distractors = distractorEntries(w);
+          rows.push({
+            order: order++,
+            sentence_index: w.sentence_index != null ? w.sentence_index : sent.sentence_index != null ? sent.sentence_index : si,
+            word_index: w.word_index != null ? w.word_index : wi,
+            sentence_prefix: w.sentence_prefix ?? "",
+            target_word: w.target_word ?? "",
+            distractors,
+            raw: w,
+          });
+        }
+      }
+      if (!rows.length) throw new Error("No words found. Expected objects with a `words` array.");
+      return rows;
+    }
+
+    let loadedRows = [];
+    /** @type {(null | { slot: string, text: string })[]} slot: distractor*, none, other */
+    let selections = [];
+    /** Partial text in Others field before "Use custom" — survives re-render */
+    const othersDraft = {};
+    /** Original uploaded JSON file name (e.g. from file input); null when loaded via paste only */
+    let uploadedJsonFileName = null;
+
+    const DEFAULT_DOWNLOAD_NAME = "distractor_selections.tsv";
+
+    function downloadFileName() {
+      if (!uploadedJsonFileName) return DEFAULT_DOWNLOAD_NAME;
+      const base = String(uploadedJsonFileName).replace(/^.*[\\/]/, "");
+      const stem = base.replace(/\.json$/i, "").replace(/\.[^.]+$/, "") || base;
+      return (stem || "distractor_selections") + "_selections.tsv";
+    }
+
+    function clearWarnings() {
+      $("warnBox").style.display = "none";
+      $("warnBox").textContent = "";
+      $("warnBoxBottom").style.display = "none";
+      $("warnBoxBottom").textContent = "";
+    }
+
+    function showDownloadWarning(msg) {
+      $("warnBox").style.display = "block";
+      $("warnBox").textContent = msg;
+      $("warnBoxBottom").style.display = "block";
+      $("warnBoxBottom").textContent = msg;
+    }
+
+    function render() {
+      const host = $("items");
+      host.innerHTML = "";
+      loadedRows.forEach((row, i) => {
+        const div = document.createElement("div");
+        div.className = "item" + (selections[i] ? "" : " pending");
+        div.dataset.index = String(i);
+
+        const prefixEl = document.createElement("div");
+        prefixEl.className = "prefix";
+        prefixEl.textContent = row.sentence_prefix;
+
+        const targetEl = document.createElement("div");
+        targetEl.className = "target";
+        targetEl.textContent = "Target: " + row.target_word;
+
+        const choices = document.createElement("div");
+        choices.className = "choices";
+
+        row.distractors.forEach(({ slot, text }) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = String(text ?? "");
+          b.title = slot;
+          if (selections[i] && selections[i].slot === slot) b.classList.add("chosen");
+          b.addEventListener("click", () => {
+            delete othersDraft[i];
+            selections[i] = { slot, text: text ?? "" };
+            render();
+            updateProgress();
+          });
+          choices.appendChild(b);
+        });
+
+        const noneBtn = document.createElement("button");
+        noneBtn.type = "button";
+        noneBtn.className = "none-opt";
+        noneBtn.textContent = "None";
+        if (selections[i] && selections[i].slot === "none") noneBtn.classList.add("chosen");
+        noneBtn.addEventListener("click", () => {
+          delete othersDraft[i];
+          selections[i] = { slot: "none", text: "" };
+          render();
+          updateProgress();
+        });
+        choices.appendChild(noneBtn);
+
+        const otherWrap = document.createElement("div");
+        otherWrap.className = "other-row";
+        const otherLabel = document.createElement("label");
+        otherLabel.htmlFor = "other-" + i;
+        otherLabel.textContent = "Others:";
+        const otherInp = document.createElement("input");
+        otherInp.type = "text";
+        otherInp.id = "other-" + i;
+        otherInp.placeholder = "Your suggestion…";
+        otherInp.autocomplete = "off";
+        if (selections[i] && selections[i].slot === "other") {
+          otherInp.value = selections[i].text;
+          otherInp.classList.add("other-chosen");
+        } else if (othersDraft[i] !== undefined) {
+          otherInp.value = othersDraft[i];
+        }
+        otherInp.addEventListener("input", () => {
+          othersDraft[i] = otherInp.value;
+        });
+        const useBtn = document.createElement("button");
+        useBtn.type = "button";
+        useBtn.className = "use-custom-btn";
+        useBtn.textContent = "Use custom";
+        if (selections[i] && selections[i].slot === "other") useBtn.classList.add("chosen");
+        useBtn.addEventListener("click", () => {
+          const v = otherInp.value.trim();
+          if (!v) {
+            window.alert("Please type your suggestion before using Others, or choose None.");
+            return;
+          }
+          othersDraft[i] = v;
+          selections[i] = { slot: "other", text: v };
+          render();
+          updateProgress();
+        });
+        otherWrap.appendChild(otherLabel);
+        otherWrap.appendChild(otherInp);
+        otherWrap.appendChild(useBtn);
+
+        div.appendChild(prefixEl);
+        div.appendChild(targetEl);
+        div.appendChild(choices);
+        div.appendChild(otherWrap);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = `Order ${row.order + 1} · sentence_index ${row.sentence_index} · word_index ${row.word_index}`;
+        div.appendChild(meta);
+
+        host.appendChild(div);
+      });
+      updateProgress();
+    }
+
+    function updateProgress() {
+      const n = loadedRows.length;
+      const done = selections.filter(Boolean).length;
+      const t = `Answered ${done} / ${n}`;
+      $("progress").textContent = t;
+      $("progressBottom").textContent = t;
+      clearWarnings();
+    }
+
+    function loadJsonText(text) {
+      const data = JSON.parse(text);
+      loadedRows = flattenFromMazeJson(data);
+      selections = new Array(loadedRows.length).fill(null);
+      for (const k of Object.keys(othersDraft)) delete othersDraft[k];
+      $("workPanel").style.display = "block";
+      $("status").textContent = `Loaded ${loadedRows.length} target word(s).`;
+      render();
+    }
+
+    function exportIncludePrefix() {
+      const cb = document.querySelector(".export-inc-prefix");
+      return !!(cb && cb.checked);
+    }
+
+    function exportIncludeSlot() {
+      const cb = document.querySelector(".export-inc-slot");
+      return !!(cb && cb.checked);
+    }
+
+    function buildTsv() {
+      const incPrefix = exportIncludePrefix();
+      const incSlot = exportIncludeSlot();
+      const header = ["order", "sentence_index", "word_index"];
+      if (incPrefix) header.push("sentence_prefix");
+      header.push("target_word");
+      if (incSlot) header.push("selected_slot");
+      header.push("selected_distractor");
+      const lines = [header.join("\t")];
+      loadedRows.forEach((row, i) => {
+        const sel = selections[i];
+        const slotLabel =
+          sel && sel.slot === "none" ? "none" : sel && sel.slot === "other" ? "other" : sel ? sel.slot : "";
+        let distractorText = "";
+        if (sel && sel.slot === "none") distractorText = "NA";
+        else if (sel && sel.slot === "other") distractorText = String(sel.text ?? "");
+        else if (sel) distractorText = String(sel.text ?? "");
+        const cells = [row.order + 1, row.sentence_index, row.word_index];
+        if (incPrefix) cells.push(escapeTsvCell(row.sentence_prefix));
+        cells.push(escapeTsvCell(row.target_word));
+        if (incSlot) cells.push(escapeTsvCell(slotLabel));
+        cells.push(escapeTsvCell(distractorText));
+        lines.push(cells.join("\t"));
+      });
+      return lines.join("\r\n");
+    }
+
+    function wireExportCheckboxSync() {
+      function bind(sel) {
+        const all = () => [...document.querySelectorAll(sel)];
+        all().forEach((cb) => {
+          cb.addEventListener("change", () => {
+            const v = cb.checked;
+            all().forEach((x) => {
+              x.checked = v;
+            });
+          });
+        });
+      }
+      bind(".export-inc-prefix");
+      bind(".export-inc-slot");
+    }
+
+    wireExportCheckboxSync();
+
+
+    function buildSubmissionPayload() {
+      const rows = loadedRows.map((row, i) => {
+        const sel = selections[i];
+        const selectedSlot =
+          sel && sel.slot === "none" ? "none" : sel && sel.slot === "other" ? "other" : sel ? sel.slot : "";
+        const selectedDistractor =
+          sel && sel.slot === "none" ? "NA" : sel ? String(sel.text ?? "") : "";
+        return {
+          order: row.order + 1,
+          sentence_index: row.sentence_index,
+          word_index: row.word_index,
+          sentence_prefix: row.sentence_prefix,
+          target_word: row.target_word,
+          selected_slot: selectedSlot,
+          selected_distractor: selectedDistractor,
+        };
+      });
+      return {
+        submission_id: submissionId,
+        submitted_at_client: new Date().toISOString(),
+        json_file: uploadedJsonFileName || AUTO_JSON_FILE,
+        user_agent: navigator.userAgent,
+        page_url: window.location.href,
+        ...prolificMeta,
+        selections: rows,
+      };
+    }
+
+    function validateAllAnswered() {
+      const missing = selections.map((s, i) => (s ? null : i)).filter((x) => x != null);
+      if (missing.length) {
+        showDownloadWarning(
+          `Please choose an option for all ${loadedRows.length} target word(s). Missing: ${missing.length} item(s) (orange outline).`
+        );
+        const firstMissing = document.querySelector(`.item[data-index="${missing[0]}"]`);
+        if (firstMissing) firstMissing.scrollIntoView({ behavior: "smooth", block: "center" });
+        return false;
+      }
+      return true;
+    }
+
+    async function submitResponses() {
+      clearWarnings();
+      if (!validateAllAnswered()) return;
+      if (!SUBMIT_ENDPOINT || SUBMIT_ENDPOINT.includes("PASTE_YOUR")) {
+        showDownloadWarning("Submission endpoint is not configured. Please contact the researcher.");
+        return;
+      }
+
+      const buttons = [...document.querySelectorAll(".submit-btn")];
+      buttons.forEach((b) => {
+        b.disabled = true;
+        b.textContent = "Submitting…";
+      });
+
+      const payload = buildSubmissionPayload();
+
+      try {
+        // mode:"no-cors" avoids browser CORS problems with Apps Script.
+        // Apps Script still receives the request; the browser just cannot read the response body.
+        await fetch(SUBMIT_ENDPOINT, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload),
+        });
+
+        document.body.innerHTML = `
+          <main style="font-family:system-ui,sans-serif;max-width:42rem;margin:3rem auto;padding:1rem;line-height:1.5">
+            <h1>Thank you!</h1>
+            <p>Your annotation responses have been submitted.</p>
+            <p>You will now be redirected to Prolific.</p>
+            <p><a href="${PROLIFIC_COMPLETION_URL}">Click here if you are not redirected automatically.</a></p>
+          </main>`;
+        window.location.href = PROLIFIC_COMPLETION_URL;
+      } catch (err) {
+        buttons.forEach((b) => {
+          b.disabled = false;
+          b.textContent = "Submit responses";
+        });
+        showDownloadWarning("Submission failed. Please check your internet connection, then try again. You can also download the backup TSV.");
+      }
+    }
+
+    function tryDownload() {
+      if (!validateAllAnswered()) return;
+      const tsv = buildTsv();
+      const blob = new Blob([tsv], { type: "text/tab-separated-values;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = downloadFileName();
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    document.querySelectorAll(".download-tsv-btn").forEach((btn) => {
+      btn.addEventListener("click", tryDownload);
+    });
+
+    document.querySelectorAll(".submit-btn").forEach((btn) => {
+      btn.addEventListener("click", submitResponses);
+    });
+
+    $("parseBtn").addEventListener("click", () => {
+      $("status").textContent = "";
+      try {
+        const text = $("jsonInput").value.trim();
+        if (!text) {
+          $("status").textContent = "Paste JSON or use upload.";
+          return;
+        }
+        uploadedJsonFileName = null;
+        loadJsonText(text);
+      } catch (e) {
+        $("status").textContent = "Parse error: " + (e && e.message ? e.message : String(e));
+        $("workPanel").style.display = "none";
+      }
+    });
+
+    $("file").addEventListener("change", (ev) => {
+      const f = ev.target.files && ev.target.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          $("jsonInput").value = String(reader.result);
+          uploadedJsonFileName = f.name;
+          loadJsonText(String(reader.result));
+          $("status").textContent = `Loaded file: ${f.name}`;
+        } catch (e) {
+          $("status").textContent = "Parse error: " + (e && e.message ? e.message : String(e));
+          $("workPanel").style.display = "none";
+        }
+      };
+      reader.readAsText(f, "UTF-8");
+    });
+
+    async function autoLoadJsonForParticipants() {
+      $("prolificLine").textContent = prolificMeta.prolific_pid
+        ? `Prolific participant: ${prolificMeta.prolific_pid}`
+        : "Prolific participant ID not detected. If you opened this outside Prolific, this is expected for testing.";
+
+      const debugMode = getParam("debug") === "1";
+      if (debugMode) $("loadPanel").style.display = "block";
+
+      try {
+        $("status").textContent = "Loading task…";
+        const res = await fetch(AUTO_JSON_FILE, { cache: "no-store" });
+        if (!res.ok) throw new Error(`Could not load ${AUTO_JSON_FILE}: HTTP ${res.status}`);
+        const text = await res.text();
+        uploadedJsonFileName = AUTO_JSON_FILE;
+        loadJsonText(text);
+        $("status").textContent = `Loaded ${AUTO_JSON_FILE}`;
+      } catch (e) {
+        $("loadPanel").style.display = "block";
+        $("status").textContent = "Could not auto-load JSON. Researcher/tester can upload it manually. " + (e && e.message ? e.message : String(e));
+      }
+    }
+
+    autoLoadJsonForParticipants();
+
+  </script>
+</body>
+</html>
