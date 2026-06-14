@@ -4736,9 +4736,9 @@
         "distractor1": "خودرو-سازنده",
         "distractor2": "سیب-کننده",
         "distractor3": "آب-میوه‌کننده",
-        "distractor4": "XXXXXXXXXXXXXXXX",
-        "distractor5": "XXXXXXXXXXXXXXXX",
-        "distractor6": "XXXXXXXXXXXXXXXX"
+        "distractor4": "خودرو-سازنده",
+        "distractor5": "سیب-کننده",
+        "distractor6": "آب-میوه‌کننده"
       },
       {
         "sentence_index": 14,
@@ -4921,9 +4921,9 @@
         "distractor1": "خودرو-سازنده",
         "distractor2": "سیب-کننده",
         "distractor3": "خانه-سازنده",
-        "distractor4": "XXXXXXXXXXXXXXXX",
-        "distractor5": "XXXXXXXXXXXXXXXX",
-        "distractor6": "XXXXXXXXXXXXXXXX"
+        "distractor4": "خودرو-سازنده",
+        "distractor5": "سیب-کننده",
+        "distractor6": "خانه-سازنده"
       },
       {
         "sentence_index": 15,
